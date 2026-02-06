@@ -57,7 +57,7 @@ function PaperDetail({ paper, onClose }) {
                     <div className="modal-section">
                         <h4 className="modal-section-title">Authors</h4>
                         <p style={{ color: 'var(--text-primary)' }}>
-                            {paper.authors.join(', ')}
+                            {paper.authors ? paper.authors.join(', ') : paper.authors_str || 'Unknown'}
                         </p>
                     </div>
 
@@ -69,7 +69,7 @@ function PaperDetail({ paper, onClose }) {
                     <div className="modal-section">
                         <h4 className="modal-section-title">Categories</h4>
                         <div className="paper-meta">
-                            {paper.categories.map((cat) => (
+                            {(paper.categories || [paper.primary_category] || []).map((cat) => (
                                 <span key={cat} className="paper-tag category">{cat}</span>
                             ))}
                         </div>

@@ -113,17 +113,25 @@ def detect_missing_ablations(paper: Paper) -> bool:
     return makes_strong_claims and not mentions_ablation
 
 
-def compute_benchmark_flags(paper: Paper) -> BenchmarkFlags:
+def compute_benchmark_flags(
+    paper: Paper,
+    full_text: Optional[str] = None,
+) -> BenchmarkFlags:
     """
     Compute benchmark validation flags for a paper.
     
     Args:
         paper: Paper object to analyze
+        full_text: Optional full paper text (extracted from PDF)
         
     Returns:
         BenchmarkFlags object with warnings
     """
-    text = f"{paper.title} {paper.abstract}".lower()
+    # Use full text if provided, otherwise just title + abstract
+    if full_text:
+        text = full_text.lower()
+    else:
+        text = f"{paper.title} {paper.abstract}".lower()
     flags = []
     
     # 1. Check for unrealistic speedup claims

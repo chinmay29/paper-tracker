@@ -21,6 +21,7 @@ function App() {
     // New state for ranked view
     const [viewMode, setViewMode] = useState('recent'); // 'recent' or 'ranked'
     const [tierFilter, setTierFilter] = useState('');
+    const [topicFilter, setTopicFilter] = useState('');
     const [isScoring, setIsScoring] = useState(false);
 
     // Load initial data
@@ -32,7 +33,8 @@ function App() {
             if (viewMode === 'ranked') {
                 papersData = await getRankedPapers({
                     limit: 50,
-                    tier: tierFilter || undefined
+                    tier: tierFilter || undefined,
+                    topicCategory: topicFilter || undefined
                 });
                 // getRankedPapers returns array directly
                 setPapers(papersData);
@@ -50,7 +52,7 @@ function App() {
         } finally {
             setLoading(false);
         }
-    }, [viewMode, tierFilter]);
+    }, [viewMode, tierFilter, topicFilter]);
 
     useEffect(() => {
         loadPapers();
@@ -216,6 +218,29 @@ function App() {
                                     <option value="B">🥈 B Tier</option>
                                     <option value="C">🥉 C Tier</option>
                                     <option value="D">📌 D Tier</option>
+                                </select>
+                                <select
+                                    value={topicFilter}
+                                    onChange={(e) => setTopicFilter(e.target.value)}
+                                    style={{
+                                        padding: '8px 12px',
+                                        background: 'rgba(30, 41, 59, 0.5)',
+                                        border: '1px solid rgba(148, 163, 184, 0.2)',
+                                        borderRadius: '8px',
+                                        color: '#e2e8f0',
+                                        fontSize: '14px',
+                                        cursor: 'pointer'
+                                    }}
+                                >
+                                    <option value="">All Topics</option>
+                                    <option value="quantization">🔢 Quantization</option>
+                                    <option value="kv_cache">💾 KV Cache</option>
+                                    <option value="speculative_decoding">⚡ Speculative Decoding</option>
+                                    <option value="batching">📦 Batching</option>
+                                    <option value="parallelism">🔀 Parallelism</option>
+                                    <option value="memory_optimization">🧠 Memory</option>
+                                    <option value="serving">🖥️ Serving</option>
+                                    <option value="efficiency">⚙️ Efficiency</option>
                                 </select>
                             </>
                         )}

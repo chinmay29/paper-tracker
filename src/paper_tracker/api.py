@@ -352,19 +352,24 @@ class ScoreAllResponse(BaseModel):
 
 
 @app.post("/api/score/{arxiv_id}", response_model=ScoringResponse)
-async def score_single_paper(arxiv_id: str):
+async def score_single_paper(
+    arxiv_id: str,
+    use_pdf: bool = Query(False, description="Download and analyze full PDF text")
+):
     """
     Score a single paper by arXiv ID.
     
     Computes topic relevance, production readiness, credibility,
     and benchmark validation scores.
+    
+    Set use_pdf=true to download and analyze full paper text (slower but more accurate).
     """
     paper = db.get_paper(arxiv_id)
     if not paper:
         raise HTTPException(status_code=404, detail=f"Paper not found: {arxiv_id}")
     
     # Score the paper
-    result = score_paper(paper)
+    result = score_paper(paper, use_pdf_text=use_pdf)
     
     # Save to database
     db.save_paper_score(

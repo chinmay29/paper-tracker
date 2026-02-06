@@ -95,6 +95,7 @@ GITHUB_PATTERNS = [
 def compute_production_readiness(
     paper: Paper,
     papers_with_code_result: Optional[dict] = None,
+    full_text: Optional[str] = None,
 ) -> ProductionReadiness:
     """
     Compute production-readiness score for a paper.
@@ -102,11 +103,16 @@ def compute_production_readiness(
     Args:
         paper: Paper object to score
         papers_with_code_result: Optional result from Papers with Code API
+        full_text: Optional full paper text (extracted from PDF)
         
     Returns:
         ProductionReadiness object with scores and signals
     """
-    text = f"{paper.title} {paper.abstract}".lower()
+    # Use full text if provided, otherwise just title + abstract
+    if full_text:
+        text = full_text.lower()
+    else:
+        text = f"{paper.title} {paper.abstract}".lower()
     
     # 1. Code availability (25 points max)
     code_score = 0

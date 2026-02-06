@@ -108,7 +108,11 @@ CATEGORY_PRIORITY = [
 ]
 
 
-def compute_topic_relevance(paper: Paper, embedding_store=None) -> TopicRelevance:
+def compute_topic_relevance(
+    paper: Paper,
+    embedding_store=None,
+    full_text: Optional[str] = None,
+) -> TopicRelevance:
     """
     Compute topic relevance score for a paper.
     
@@ -117,11 +121,16 @@ def compute_topic_relevance(paper: Paper, embedding_store=None) -> TopicRelevanc
     Args:
         paper: Paper object to score
         embedding_store: Optional EmbeddingsStore for semantic similarity
+        full_text: Optional full paper text (extracted from PDF)
         
     Returns:
         TopicRelevance object with scores and matched keywords
     """
-    text = f"{paper.title} {paper.abstract}".lower()
+    # Use full text if provided, otherwise just title + abstract
+    if full_text:
+        text = full_text.lower()
+    else:
+        text = f"{paper.title} {paper.abstract}".lower()
     
     # 1. Keyword matching
     matched_keywords = []

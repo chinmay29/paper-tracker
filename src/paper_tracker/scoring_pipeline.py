@@ -2,6 +2,7 @@
 
 from datetime import datetime
 from typing import Optional
+import logging
 
 from .models import Paper
 from .scoring import (
@@ -16,6 +17,8 @@ from .production_readiness import compute_production_readiness
 from .credibility import compute_credibility
 from .benchmark_validation import compute_benchmark_flags
 
+logger = logging.getLogger(__name__)
+
 
 class ScoringPipeline:
     """
@@ -29,6 +32,7 @@ class ScoringPipeline:
         embedding_store=None,
         papers_with_code_client=None,
         semantic_scholar_client=None,
+        use_pdf_text: bool = False,
     ):
         """
         Initialize the scoring pipeline.
@@ -37,10 +41,40 @@ class ScoringPipeline:
             embedding_store: Optional EmbeddingsStore for semantic similarity
             papers_with_code_client: Optional client for code availability
             semantic_scholar_client: Optional client for author h-indices
+            use_pdf_text: If True, download and extract PDF text for scoring
         """
         self.embedding_store = embedding_store
         self.papers_with_code_client = papers_with_code_client
         self.semantic_scholar_client = semantic_scholar_client
+        self.use_pdf_text = use_pdf_text
+        self._pdf_extractor = None
+    
+    def _get_pdf_extractor(self):
+        """Lazy-load the PDF extractor."""
+        if self._pdf_extractor is None and self.use_pdf_text:
+            from .pdf_extractor import PDFExtractor
+            self._pdf_extractor = PDFExtractor()
+        return self._pdf_extractor
+    
+    def _get_full_text(self, paper: Paper) -> Optional[str]:
+        """Get full paper text if PDF extraction is enabled."""
+        if not self.use_pdf_text:
+            return None
+        
+        extractor = self._get_pdf_extractor()
+        if not extractor:
+            return None
+        
+        try:
+            return extractor.get_combined_text(
+                arxiv_id=paper.arxiv_id,
+                pdf_url=paper.pdf_url,
+                title=paper.title,
+                abstract=paper.abstract,
+            )
+        except Exception as e:
+            logger.warning(f"Failed to extract PDF text for {paper.arxiv_id}: {e}")
+            return None
     
     def score_paper(
         self,
@@ -59,17 +93,20 @@ class ScoringPipeline:
         Returns:
             PaperScore with all component scores
         """
+        # Get full text if enabled
+        full_text = self._get_full_text(paper)
+        
         # 1. Topic relevance
-        topic = compute_topic_relevance(paper, self.embedding_store)
+        topic = compute_topic_relevance(paper, self.embedding_store, full_text)
         
         # 2. Production readiness
-        production = compute_production_readiness(paper, papers_with_code_result)
+        production = compute_production_readiness(paper, papers_with_code_result, full_text)
         
         # 3. Credibility
         cred = compute_credibility(paper, author_h_indices)
         
         # 4. Benchmark flags
-        flags = compute_benchmark_flags(paper)
+        flags = compute_benchmark_flags(paper, full_text)
         
         # 5. Calculate days since published
         days_since = (datetime.now() - paper.published).days
@@ -156,31 +193,33 @@ class ScoringPipeline:
         return filtered
 
 
-def score_paper(paper: Paper) -> PaperScore:
+def score_paper(paper: Paper, use_pdf_text: bool = False) -> PaperScore:
     """
     Convenience function to score a single paper.
     
     Args:
         paper: Paper to score
+        use_pdf_text: If True, download and analyze full PDF text
         
     Returns:
         PaperScore with all component scores
     """
-    pipeline = ScoringPipeline()
+    pipeline = ScoringPipeline(use_pdf_text=use_pdf_text)
     return pipeline.score_paper(paper)
 
 
-def score_papers(papers: list[Paper]) -> list[PaperScore]:
+def score_papers(papers: list[Paper], use_pdf_text: bool = False) -> list[PaperScore]:
     """
     Convenience function to score multiple papers.
     
     Args:
         papers: List of papers to score
+        use_pdf_text: If True, download and analyze full PDF text
         
     Returns:
         List of PaperScore objects, sorted by score descending
     """
-    pipeline = ScoringPipeline()
+    pipeline = ScoringPipeline(use_pdf_text=use_pdf_text)
     scores = pipeline.score_papers(papers)
     scores.sort(key=lambda s: s.composite_score, reverse=True)
     return scores
