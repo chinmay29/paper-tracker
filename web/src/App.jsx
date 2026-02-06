@@ -103,6 +103,8 @@ function App() {
     // Poll for stats updates
     const startPolling = useCallback(async (initialStats, targetCount, type = 'scoring') => {
         const startTime = Date.now();
+        let sawActive = false;  // Track if we've seen the task as active
+
         const pollInterval = setInterval(async () => {
             try {
                 let done = false;
@@ -112,6 +114,7 @@ function App() {
                     const taskStatus = await getTaskStatus();
 
                     if (taskStatus.active && taskStatus.type === 'scoring') {
+                        sawActive = true;  // Mark that we've seen the task running
                         const progress = Math.min(100, (taskStatus.processed / taskStatus.total) * 100);
                         updateProgress(progress, taskStatus.message || `Scoring papers: ${taskStatus.processed} / ${taskStatus.total}`);
 
@@ -120,8 +123,11 @@ function App() {
                             // Logic handles "active=false" below
                         }
                     } else if (!taskStatus.active && taskStatus.type === 'none') {
-                        // Task finished
-                        done = true;
+                        // Only mark as done if we've seen it active at least once
+                        // OR if enough time has passed (task might have finished before first poll)
+                        if (sawActive || Date.now() - startTime > 2000) {
+                            done = true;
+                        }
                     }
                 } else if (type === 'fetching') {
                     const newStats = await getStats();
