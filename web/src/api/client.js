@@ -117,8 +117,11 @@ export async function scorePaper(arxivId) {
 /**
  * Score all unscored papers
  */
-export async function scoreAllPapers(limit = 100) {
-    return fetchApi(`/score-all?limit=${limit}`, { method: 'POST' });
+export async function scoreAllPapers({ limit = 100, usePdf = false, rescoreAll = false } = {}) {
+    const params = new URLSearchParams({ limit });
+    if (usePdf) params.set('use_pdf', 'true');
+    if (rescoreAll) params.set('rescore_all', 'true');
+    return fetchApi(`/score-all?${params}`, { method: 'POST' });
 }
 
 /**

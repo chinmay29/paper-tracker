@@ -112,10 +112,10 @@ function App() {
     };
 
     // Score all papers handler
-    const handleScoreAll = async () => {
+    const handleScoreAll = async (usePdf = false, rescoreAll = false) => {
         try {
             setIsScoring(true);
-            const result = await scoreAllPapers(200);
+            const result = await scoreAllPapers({ limit: 200, usePdf, rescoreAll });
             await loadPapers();
             setError(null);
             console.log('Scored papers:', result);
@@ -246,7 +246,7 @@ function App() {
                         )}
 
                         <button
-                            onClick={handleScoreAll}
+                            onClick={() => handleScoreAll(false, false)}
                             disabled={isScoring}
                             style={{
                                 padding: '8px 16px',
@@ -262,7 +262,26 @@ function App() {
                                 marginLeft: 'auto'
                             }}
                         >
-                            {isScoring ? '⏳ Scoring...' : '🎯 Score All Papers'}
+                            {isScoring ? '⏳ Scoring...' : '🎯 Score New'}
+                        </button>
+                        <button
+                            onClick={() => handleScoreAll(true, true)}
+                            disabled={isScoring}
+                            title="Re-score all papers using full PDF text (slower but more accurate)"
+                            style={{
+                                padding: '8px 16px',
+                                background: isScoring
+                                    ? 'rgba(100, 116, 139, 0.3)'
+                                    : 'linear-gradient(135deg, #f59e0b, #d97706)',
+                                border: 'none',
+                                borderRadius: '8px',
+                                color: '#fff',
+                                fontWeight: '500',
+                                fontSize: '14px',
+                                cursor: isScoring ? 'not-allowed' : 'pointer',
+                            }}
+                        >
+                            {isScoring ? '⏳ Processing...' : '📄 Re-score with PDF'}
                         </button>
                     </div>
 

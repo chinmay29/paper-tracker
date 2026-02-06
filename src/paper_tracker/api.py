@@ -402,15 +402,22 @@ async def score_single_paper(
 @app.post("/api/score-all", response_model=ScoreAllResponse)
 async def score_all_papers(
     limit: int = Query(100, ge=1, le=500),
+    use_pdf: bool = Query(False, description="Use PDF text extraction (slower but more accurate)"),
+    rescore_all: bool = Query(False, description="Re-score all papers, not just unscored ones"),
     background_tasks: BackgroundTasks = None,
 ):
     """
-    Score all unscored papers.
+    Score papers in batch.
     
-    Runs synchronously for small batches, background for large.
+    - Default: scores only unscored papers
+    - rescore_all=true: re-scores all papers (useful after algorithm updates)
+    - use_pdf=true: downloads and analyzes full PDF text (slower but more accurate)
     """
-    # Get unscored papers
-    papers = db.get_unscored_papers(limit=limit)
+    # Get papers to score
+    if rescore_all:
+        papers = db.list_papers(limit=limit)
+    else:
+        papers = db.get_unscored_papers(limit=limit)
     
     if not papers:
         stats = db.get_stats()
@@ -424,7 +431,7 @@ async def score_all_papers(
     scored_count = 0
     for paper in papers:
         try:
-            result = score_paper(paper)
+            result = score_paper(paper, use_pdf_text=use_pdf)
             db.save_paper_score(
                 arxiv_id=paper.arxiv_id,
                 topic_score=result.topic_relevance.score,
