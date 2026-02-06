@@ -456,11 +456,7 @@ def _score_papers_task(papers: list[Paper], use_pdf: bool = False):
     
     logger.info(f"Starting background scoring for {len(papers)} papers (PDF={use_pdf})")
     
-    task_state.active = True
-    task_state.type = "scoring"
-    task_state.total = len(papers)
-    task_state.processed = 0
-    task_state.message = "Starting scoring..."
+    # Note: task_state is initialized in score_all_papers() before this task starts
     
     for i, paper in enumerate(papers):
         try:
@@ -541,6 +537,13 @@ async def score_all_papers(
             tier_distribution=stats.get("tier_distribution", {}),
         )
     
+    # Initialize task state BEFORE starting background task to prevent race condition
+    task_state.active = True
+    task_state.type = "scoring"
+    task_state.total = len(papers)
+    task_state.processed = 0
+    task_state.message = "Starting scoring..."
+    
     # Add to background tasks
     if background_tasks:
         background_tasks.add_task(_score_papers_task, papers, use_pdf)
@@ -584,22 +587,27 @@ async def get_ranked_papers(
         # Get full scoring data
         paper_data = db.get_paper_with_scores(paper.arxiv_id)
         if paper_data:
+            # Handle potential None values safely
+            abstract = paper.abstract or ""
+            abstract_truncated = abstract[:500] + "..." if len(abstract) > 500 else abstract
+            published_str = paper.published.isoformat() if paper.published else ""
+            
             results.append(RankedPaperResponse(
                 arxiv_id=paper.arxiv_id,
-                title=paper.title,
-                abstract=paper.abstract[:500] + "..." if len(paper.abstract) > 500 else paper.abstract,
-                authors_str=paper.authors_str,
-                published=paper.published.isoformat(),
-                pdf_url=paper.pdf_url,
-                arxiv_url=paper.arxiv_url,
-                composite_score=paper_data.get("composite_score", 0),
-                rank_tier=paper_data.get("rank_tier", ""),
-                topic_category=paper_data.get("topic_category", ""),
-                topic_score=paper_data.get("topic_score", 0),
-                production_score=paper_data.get("production_score", 0),
-                credibility_score=paper_data.get("credibility_score", 0),
-                has_code=paper.has_code,
-                benchmark_flags=paper_data.get("benchmark_flags", []),
+                title=paper.title or "",
+                abstract=abstract_truncated,
+                authors_str=paper.authors_str or "",
+                published=published_str,
+                pdf_url=paper.pdf_url or "",
+                arxiv_url=paper.arxiv_url or "",
+                composite_score=paper_data.get("composite_score") or 0,
+                rank_tier=paper_data.get("rank_tier") or "",
+                topic_category=paper_data.get("topic_category") or "",
+                topic_score=paper_data.get("topic_score") or 0,
+                production_score=paper_data.get("production_score") or 0,
+                credibility_score=paper_data.get("credibility_score") or 0,
+                has_code=paper.has_code or False,
+                benchmark_flags=paper_data.get("benchmark_flags") or [],
             ))
     
     return results

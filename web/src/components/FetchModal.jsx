@@ -7,6 +7,7 @@ import { getFetchKeywords, fetchNewPapers } from '../api/client';
 function FetchModal({ isOpen, onClose, onFetchComplete }) {
     const [keywords, setKeywords] = useState([]);
     const [selectedKeywords, setSelectedKeywords] = useState([]);
+    const [customKeyword, setCustomKeyword] = useState('');
     const [days, setDays] = useState(7);
     const [maxResults, setMaxResults] = useState(100);
     const [loading, setLoading] = useState(false);
@@ -45,6 +46,24 @@ function FetchModal({ isOpen, onClose, onFetchComplete }) {
 
     const selectAll = () => setSelectedKeywords([...keywords]);
     const clearAll = () => setSelectedKeywords([]);
+
+    const addCustomKeyword = () => {
+        const trimmed = customKeyword.trim();
+        if (trimmed && !selectedKeywords.includes(trimmed)) {
+            setSelectedKeywords(prev => [...prev, trimmed]);
+            if (!keywords.includes(trimmed)) {
+                setKeywords(prev => [...prev, trimmed]);
+            }
+        }
+        setCustomKeyword('');
+    };
+
+    const handleKeyPress = (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            addCustomKeyword();
+        }
+    };
 
     const handleFetch = async () => {
         try {
@@ -160,6 +179,41 @@ function FetchModal({ isOpen, onClose, onFetchComplete }) {
                                     Clear
                                 </button>
                             </div>
+                        </div>
+
+                        {/* Custom keyword input */}
+                        <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
+                            <input
+                                type="text"
+                                value={customKeyword}
+                                onChange={(e) => setCustomKeyword(e.target.value)}
+                                onKeyPress={handleKeyPress}
+                                placeholder="Add custom keyword..."
+                                style={{
+                                    flex: 1,
+                                    padding: '8px 12px',
+                                    background: 'rgba(30, 41, 59, 0.5)',
+                                    border: '1px solid rgba(148, 163, 184, 0.2)',
+                                    borderRadius: '6px',
+                                    color: '#e2e8f0',
+                                    fontSize: '14px',
+                                }}
+                            />
+                            <button
+                                onClick={addCustomKeyword}
+                                disabled={!customKeyword.trim()}
+                                style={{
+                                    padding: '8px 16px',
+                                    background: customKeyword.trim() ? 'linear-gradient(135deg, #8b5cf6, #7c3aed)' : 'rgba(100, 116, 139, 0.3)',
+                                    border: 'none',
+                                    borderRadius: '6px',
+                                    color: '#fff',
+                                    fontWeight: '500',
+                                    cursor: customKeyword.trim() ? 'pointer' : 'not-allowed',
+                                }}
+                            >
+                                + Add
+                            </button>
                         </div>
 
                         {loading ? (

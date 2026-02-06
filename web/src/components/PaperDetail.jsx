@@ -69,8 +69,8 @@ function PaperDetail({ paper, onClose }) {
                     <div className="modal-section">
                         <h4 className="modal-section-title">Categories</h4>
                         <div className="paper-meta">
-                            {(paper.categories || [paper.primary_category] || []).map((cat) => (
-                                <span key={cat} className="paper-tag category">{cat}</span>
+                            {(paper.categories || [paper.primary_category] || []).filter(Boolean).map((cat, idx) => (
+                                <span key={`${cat}-${idx}`} className="paper-tag category">{cat}</span>
                             ))}
                         </div>
                     </div>
