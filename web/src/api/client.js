@@ -25,8 +25,17 @@ async function fetchApi(endpoint, options = {}) {
 
     if (!response.ok) {
         const data = await response.json().catch(() => ({}));
+        let message = data.detail || `HTTP ${response.status}`;
+
+        // Handle FastAPI validation error structure
+        if (Array.isArray(data.detail)) {
+            message = data.detail.map(e => `${e.loc.join('.')}: ${e.msg}`).join(', ');
+        } else if (typeof message === 'object') {
+            message = JSON.stringify(message);
+        }
+
         throw new ApiError(
-            data.detail || `HTTP ${response.status}`,
+            message,
             response.status,
             data
         );
@@ -137,6 +146,13 @@ export async function scoreAllPapers({ limit = 100, usePdf = false, rescoreAll =
  */
 export async function getPaperScore(arxivId) {
     return fetchApi(`/paper/${encodeURIComponent(arxivId)}/score`);
+}
+
+/**
+ * Get current background task status
+ */
+export async function getTaskStatus() {
+    return fetchApi('/task-status');
 }
 
 /**

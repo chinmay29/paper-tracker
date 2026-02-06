@@ -26,6 +26,17 @@ logger = logging.getLogger(__name__)
 db: Database = None
 embeddings_store: Optional[EmbeddingsStore] = None
 
+# Global task state for progress tracking
+class TaskState:
+    def __init__(self):
+        self.active = False
+        self.total = 0
+        self.processed = 0
+        self.message = ""
+        self.type = "none"  # "scoring", "fetching"
+
+task_state = TaskState()
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -109,6 +120,7 @@ class SearchResponse(BaseModel):
 
 class StatsResponse(BaseModel):
     total_papers: int
+    scored_papers: int
     papers_last_7_days: int
     top_categories: list[tuple[str, int]]
     embeddings_count: Optional[int]
@@ -238,6 +250,7 @@ async def get_stats():
     stats = db.get_stats()
     return StatsResponse(
         total_papers=stats["total_papers"],
+        scored_papers=stats.get("scored_papers", 0),
         papers_last_7_days=stats["papers_last_7_days"],
         top_categories=stats["top_categories"],
         embeddings_count=embeddings_store.get_count() if embeddings_store else None,
@@ -439,12 +452,20 @@ async def score_single_paper(
 
 def _score_papers_task(papers: list[Paper], use_pdf: bool = False):
     """Background task to score papers."""
-    global db
+    global db, task_state
     
     logger.info(f"Starting background scoring for {len(papers)} papers (PDF={use_pdf})")
     
+    task_state.active = True
+    task_state.type = "scoring"
+    task_state.total = len(papers)
+    task_state.processed = 0
+    task_state.message = "Starting scoring..."
+    
     for i, paper in enumerate(papers):
         try:
+            task_state.message = f"Scoring {paper.arxiv_id}..."
+            
             # Check if text is extracted first to avoid re-downloading if possible
             # But score_paper handles that via caching
             
@@ -460,6 +481,8 @@ def _score_papers_task(papers: list[Paper], use_pdf: bool = False):
                 benchmark_flags=json.dumps(result.benchmark_flags.flags),
             )
             
+            task_state.processed += 1
+            
             # Small sleep to prevent freezing the server completely if CPU bound
             if i % 5 == 0:
                 import time
@@ -467,13 +490,30 @@ def _score_papers_task(papers: list[Paper], use_pdf: bool = False):
                 
         except Exception as e:
             logger.warning(f"Failed to score paper {paper.arxiv_id}: {e}")
+            # Still increment processed count so progress bar continues
+            task_state.processed += 1
             
     logger.info(f"Finished background scoring {len(papers)} papers")
+    task_state.active = False
+    task_state.message = "Scoring completed"
+    task_state.type = "none"  # Reset type so frontend knows it's done
+
+
+@app.get("/api/task-status")
+async def get_task_status():
+    """Get status of current background task."""
+    return {
+        "active": task_state.active,
+        "type": task_state.type,
+        "total": task_state.total,
+        "processed": task_state.processed,
+        "message": task_state.message,
+    }
 
 
 @app.post("/api/score-all", response_model=ScoreAllResponse)
 async def score_all_papers(
-    limit: int = Query(100, ge=1, le=500),
+    limit: int = Query(100, ge=1, le=5000),
     use_pdf: bool = Query(False, description="Use PDF text extraction (slower but more accurate)"),
     rescore_all: bool = Query(False, description="Re-score all papers, not just unscored ones"),
     background_tasks: BackgroundTasks = None,

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { getPapers, searchPapers, getStats, fetchNewPapers, getRankedPapers, scoreAllPapers } from './api/client';
+import { getPapers, searchPapers, getStats, fetchNewPapers, getRankedPapers, scoreAllPapers, getTaskStatus } from './api/client';
 import Header from './components/Header';
 import SearchBar from './components/SearchBar';
 import StatsPanel from './components/StatsPanel';
@@ -105,30 +105,34 @@ function App() {
         const startTime = Date.now();
         const pollInterval = setInterval(async () => {
             try {
-                const newStats = await getStats();
-                setStats(newStats);
-
-                let progress = 0;
                 let done = false;
 
                 if (type === 'scoring') {
-                    const scored = newStats.scored_papers - initialStats.scored_papers;
-                    progress = Math.min(100, (scored / targetCount) * 100);
-                    updateProgress(progress, `Scoring papers: ${scored} / ${targetCount}`);
+                    // Use task status endpoint for accurate progress
+                    const taskStatus = await getTaskStatus();
 
-                    if (scored >= targetCount) done = true;
+                    if (taskStatus.active && taskStatus.type === 'scoring') {
+                        const progress = Math.min(100, (taskStatus.processed / taskStatus.total) * 100);
+                        updateProgress(progress, taskStatus.message || `Scoring papers: ${taskStatus.processed} / ${taskStatus.total}`);
+
+                        if (taskStatus.processed >= taskStatus.total && taskStatus.total > 0) {
+                            // Backend says it's done or almost done, but active is still true?
+                            // Logic handles "active=false" below
+                        }
+                    } else if (!taskStatus.active && taskStatus.type === 'none') {
+                        // Task finished
+                        done = true;
+                    }
                 } else if (type === 'fetching') {
+                    const newStats = await getStats();
+                    setStats(newStats);
                     const fetched = newStats.total_papers - initialStats.total_papers;
-                    // Indeterminate progress for fetching since we don't look total
                     updateProgress(null, `Fetched ${fetched} new papers...`);
 
-                    // Stop after 30s or if papers stop increasing for 5s (simplified: just 30s timeout or manual reload)
-                    // For now, let's just run for 5s then reload papers to see if any
-                    // Actually, let's just trigger a reload every few seconds
                     if (fetched > 0) loadPapers();
                 }
 
-                if (done || Date.now() - startTime > 300000) { // 5 min timeout
+                if (done || Date.now() - startTime > 600000) { // 10 min timeout
                     clearInterval(pollInterval);
                     if (done) {
                         showToast('Task completed successfully!', 'success', null, 3000);
@@ -136,7 +140,7 @@ function App() {
                         setIsScoring(false);
                         setFetchingPapers(false);
                     } else {
-                        showToast('Task taking longer than expected. check back later.', 'warning', null, 5000);
+                        showToast('Task taking longer than expected or timed out.', 'warning', null, 5000);
                         setIsScoring(false);
                         setFetchingPapers(false);
                     }
@@ -144,7 +148,7 @@ function App() {
             } catch (err) {
                 console.error('Polling error:', err);
             }
-        }, 2000);
+        }, 1000);
 
         return pollInterval;
     }, [updateProgress, loadPapers, showToast]);
@@ -175,7 +179,8 @@ function App() {
 
             showToast('Starting scoring...', 'info', 0);
 
-            const result = await scoreAllPapers({ limit: 200, usePdf, rescoreAll });
+            // Use 2000 as limit to effectively score "all" papers
+            const result = await scoreAllPapers({ limit: 2000, usePdf, rescoreAll });
             const queuedCount = result.scored;
 
             if (queuedCount === 0) {
