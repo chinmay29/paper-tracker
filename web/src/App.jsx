@@ -27,26 +27,35 @@ function App() {
     const [isScoring, setIsScoring] = useState(false);
     const [showFetchModal, setShowFetchModal] = useState(false);
 
+    // Pagination state
+    const [currentPage, setCurrentPage] = useState(1);
+    const [hasMore, setHasMore] = useState(true);
+    const [loadingMore, setLoadingMore] = useState(false);
+    const PAGE_SIZE = 30;
+
     // Toast for progress notifications
     const { showToast, updateProgress, hideToast, ToastComponent } = useToast();
 
-    // Load initial data
+    // Load initial data (reset pagination)
     const loadPapers = useCallback(async () => {
         try {
             setLoading(true);
+            setCurrentPage(1);
             let papersData;
 
             if (viewMode === 'ranked') {
                 papersData = await getRankedPapers({
-                    limit: 50,
+                    limit: PAGE_SIZE,
+                    page: 1,
                     tier: tierFilter || undefined,
                     topicCategory: topicFilter || undefined
                 });
-                // getRankedPapers returns array directly
                 setPapers(papersData);
+                setHasMore(papersData.length >= PAGE_SIZE);
             } else {
-                papersData = await getPapers({ limit: 50 });
+                papersData = await getPapers({ limit: PAGE_SIZE, page: 1 });
                 setPapers(papersData.papers);
+                setHasMore(papersData.papers.length >= PAGE_SIZE);
             }
 
             const statsData = await getStats();
@@ -59,6 +68,38 @@ function App() {
             setLoading(false);
         }
     }, [viewMode, tierFilter, topicFilter]);
+
+    // Load more papers (append to list)
+    const loadMorePapers = useCallback(async () => {
+        if (loadingMore || !hasMore) return;
+
+        try {
+            setLoadingMore(true);
+            const nextPage = currentPage + 1;
+            let papersData;
+
+            if (viewMode === 'ranked') {
+                papersData = await getRankedPapers({
+                    limit: PAGE_SIZE,
+                    page: nextPage,
+                    tier: tierFilter || undefined,
+                    topicCategory: topicFilter || undefined
+                });
+                setPapers(prev => [...prev, ...papersData]);
+                setHasMore(papersData.length >= PAGE_SIZE);
+            } else {
+                papersData = await getPapers({ limit: PAGE_SIZE, page: nextPage });
+                setPapers(prev => [...prev, ...papersData.papers]);
+                setHasMore(papersData.papers.length >= PAGE_SIZE);
+            }
+
+            setCurrentPage(nextPage);
+        } catch (err) {
+            console.error('Failed to load more papers:', err);
+        } finally {
+            setLoadingMore(false);
+        }
+    }, [viewMode, tierFilter, topicFilter, currentPage, loadingMore, hasMore]);
 
     useEffect(() => {
         loadPapers();
@@ -394,15 +435,58 @@ function App() {
                             </p>
                         </div>
                     ) : (
-                        <div className="papers-grid">
-                            {papers.map((paper) => (
-                                <PaperCard
-                                    key={paper.arxiv_id}
-                                    paper={paper}
-                                    onClick={() => setSelectedPaper(paper)}
-                                />
-                            ))}
-                        </div>
+                        <>
+                            <div className="papers-grid">
+                                {papers.map((paper) => (
+                                    <PaperCard
+                                        key={paper.arxiv_id}
+                                        paper={paper}
+                                        onClick={() => setSelectedPaper(paper)}
+                                    />
+                                ))}
+                            </div>
+
+                            {/* Load More Button */}
+                            {hasMore && (
+                                <div style={{
+                                    display: 'flex',
+                                    justifyContent: 'center',
+                                    padding: '2rem 0',
+                                }}>
+                                    <button
+                                        onClick={loadMorePapers}
+                                        disabled={loadingMore}
+                                        style={{
+                                            padding: '12px 32px',
+                                            background: loadingMore
+                                                ? 'rgba(100, 116, 139, 0.3)'
+                                                : 'linear-gradient(135deg, #3b82f6, #2563eb)',
+                                            border: 'none',
+                                            borderRadius: '12px',
+                                            color: '#fff',
+                                            fontWeight: '600',
+                                            fontSize: '15px',
+                                            cursor: loadingMore ? 'not-allowed' : 'pointer',
+                                            transition: 'all 0.2s',
+                                            boxShadow: '0 4px 15px rgba(59, 130, 246, 0.3)',
+                                        }}
+                                    >
+                                        {loadingMore ? '⏳ Loading...' : `📄 Load More Papers`}
+                                    </button>
+                                </div>
+                            )}
+
+                            {!hasMore && papers.length > 0 && (
+                                <div style={{
+                                    textAlign: 'center',
+                                    padding: '1.5rem 0',
+                                    color: '#64748b',
+                                    fontSize: '14px',
+                                }}>
+                                    ✓ All {papers.length} papers loaded
+                                </div>
+                            )}
+                        </>
                     )}
                 </div>
             </main>
