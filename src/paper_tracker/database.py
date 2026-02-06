@@ -21,7 +21,13 @@ class Database:
     
     def _get_connection(self) -> sqlite3.Connection:
         """Get a database connection with row factory."""
-        conn = sqlite3.connect(self.db_path)
+        # Use check_same_thread=False for multi-threaded async access
+        # timeout=30 to handle briefly locked database
+        conn = sqlite3.connect(
+            self.db_path,
+            check_same_thread=False,
+            timeout=30.0
+        )
         conn.row_factory = sqlite3.Row
         return conn
     
