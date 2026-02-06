@@ -96,4 +96,44 @@ export async function healthCheck() {
     return fetchApi('/health');
 }
 
+/**
+ * Get ranked papers with scores
+ */
+export async function getRankedPapers({ limit = 20, page = 1, minScore, tier, topicCategory } = {}) {
+    const params = new URLSearchParams({ limit, page });
+    if (minScore) params.set('min_score', minScore);
+    if (tier) params.set('tier', tier);
+    if (topicCategory) params.set('topic_category', topicCategory);
+    return fetchApi(`/ranked-papers?${params}`);
+}
+
+/**
+ * Score a single paper
+ */
+export async function scorePaper(arxivId) {
+    return fetchApi(`/score/${encodeURIComponent(arxivId)}`, { method: 'POST' });
+}
+
+/**
+ * Score all unscored papers
+ */
+export async function scoreAllPapers(limit = 100) {
+    return fetchApi(`/score-all?limit=${limit}`, { method: 'POST' });
+}
+
+/**
+ * Get paper score breakdown
+ */
+export async function getPaperScore(arxivId) {
+    return fetchApi(`/paper/${encodeURIComponent(arxivId)}/score`);
+}
+
+/**
+ * Get topic categories
+ */
+export async function getTopicCategories() {
+    return fetchApi('/topic-categories');
+}
+
 export { ApiError };
+

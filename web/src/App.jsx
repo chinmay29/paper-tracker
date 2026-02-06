@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { getPapers, searchPapers, getStats, fetchNewPapers } from './api/client';
+import { getPapers, searchPapers, getStats, fetchNewPapers, getRankedPapers, scoreAllPapers } from './api/client';
 import Header from './components/Header';
 import SearchBar from './components/SearchBar';
 import StatsPanel from './components/StatsPanel';
@@ -18,41 +18,48 @@ function App() {
     const [isSearching, setIsSearching] = useState(false);
     const [fetchingPapers, setFetchingPapers] = useState(false);
 
+    // New state for ranked view
+    const [viewMode, setViewMode] = useState('recent'); // 'recent' or 'ranked'
+    const [tierFilter, setTierFilter] = useState('');
+    const [isScoring, setIsScoring] = useState(false);
+
     // Load initial data
-    useEffect(() => {
-        async function loadInitialData() {
-            try {
-                setLoading(true);
-                const [papersData, statsData] = await Promise.all([
-                    getPapers({ limit: 50 }),
-                    getStats(),
-                ]);
+    const loadPapers = useCallback(async () => {
+        try {
+            setLoading(true);
+            let papersData;
+
+            if (viewMode === 'ranked') {
+                papersData = await getRankedPapers({
+                    limit: 50,
+                    tier: tierFilter || undefined
+                });
+                // getRankedPapers returns array directly
+                setPapers(papersData);
+            } else {
+                papersData = await getPapers({ limit: 50 });
                 setPapers(papersData.papers);
-                setStats(statsData);
-                setError(null);
-            } catch (err) {
-                console.error('Failed to load data:', err);
-                setError(err.message || 'Failed to load data');
-            } finally {
-                setLoading(false);
             }
+
+            const statsData = await getStats();
+            setStats(statsData);
+            setError(null);
+        } catch (err) {
+            console.error('Failed to load data:', err);
+            setError(err.message || 'Failed to load data');
+        } finally {
+            setLoading(false);
         }
-        loadInitialData();
-    }, []);
+    }, [viewMode, tierFilter]);
+
+    useEffect(() => {
+        loadPapers();
+    }, [loadPapers]);
 
     // Search handler
     const handleSearch = useCallback(async (query, mode) => {
         if (!query.trim()) {
-            // Reset to full list
-            try {
-                setIsSearching(true);
-                const papersData = await getPapers({ limit: 50 });
-                setPapers(papersData.papers);
-            } catch (err) {
-                setError(err.message);
-            } finally {
-                setIsSearching(false);
-            }
+            loadPapers();
             return;
         }
 
@@ -71,15 +78,19 @@ function App() {
         } finally {
             setIsSearching(false);
         }
-    }, []);
+    }, [loadPapers]);
 
     // Debounced search
     useEffect(() => {
+        if (viewMode === 'ranked' && searchQuery) {
+            // Can't search in ranked mode, switch to recent
+            setViewMode('recent');
+        }
         const timer = setTimeout(() => {
             handleSearch(searchQuery, searchMode);
         }, 300);
         return () => clearTimeout(timer);
-    }, [searchQuery, searchMode, handleSearch]);
+    }, [searchQuery, searchMode, handleSearch, viewMode]);
 
     // Fetch new papers handler
     const handleFetchPapers = async () => {
@@ -88,18 +99,29 @@ function App() {
             await fetchNewPapers({ days: 7, maxResults: 100, enrich: true });
             // Reload data after a short delay
             setTimeout(async () => {
-                const [papersData, statsData] = await Promise.all([
-                    getPapers({ limit: 50 }),
-                    getStats(),
-                ]);
-                setPapers(papersData.papers);
-                setStats(statsData);
+                await loadPapers();
                 setFetchingPapers(false);
             }, 2000);
         } catch (err) {
             console.error('Failed to fetch papers:', err);
             setError(err.message);
             setFetchingPapers(false);
+        }
+    };
+
+    // Score all papers handler
+    const handleScoreAll = async () => {
+        try {
+            setIsScoring(true);
+            const result = await scoreAllPapers(200);
+            await loadPapers();
+            setError(null);
+            console.log('Scored papers:', result);
+        } catch (err) {
+            console.error('Failed to score papers:', err);
+            setError(err.message);
+        } finally {
+            setIsScoring(false);
         }
     };
 
@@ -119,6 +141,105 @@ function App() {
                         onModeChange={setSearchMode}
                         isSearching={isSearching}
                     />
+
+                    {/* View Mode Toggle */}
+                    <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '12px',
+                        marginBottom: '1rem',
+                        flexWrap: 'wrap'
+                    }}>
+                        <div style={{
+                            display: 'flex',
+                            background: 'rgba(30, 41, 59, 0.5)',
+                            borderRadius: '8px',
+                            padding: '4px',
+                            border: '1px solid rgba(148, 163, 184, 0.1)'
+                        }}>
+                            <button
+                                onClick={() => setViewMode('recent')}
+                                style={{
+                                    padding: '8px 16px',
+                                    border: 'none',
+                                    borderRadius: '6px',
+                                    cursor: 'pointer',
+                                    fontWeight: '500',
+                                    fontSize: '14px',
+                                    transition: 'all 0.2s',
+                                    background: viewMode === 'recent'
+                                        ? 'linear-gradient(135deg, #3b82f6, #2563eb)'
+                                        : 'transparent',
+                                    color: viewMode === 'recent' ? '#fff' : '#94a3b8'
+                                }}
+                            >
+                                📅 Recent
+                            </button>
+                            <button
+                                onClick={() => setViewMode('ranked')}
+                                style={{
+                                    padding: '8px 16px',
+                                    border: 'none',
+                                    borderRadius: '6px',
+                                    cursor: 'pointer',
+                                    fontWeight: '500',
+                                    fontSize: '14px',
+                                    transition: 'all 0.2s',
+                                    background: viewMode === 'ranked'
+                                        ? 'linear-gradient(135deg, #a855f7, #7c3aed)'
+                                        : 'transparent',
+                                    color: viewMode === 'ranked' ? '#fff' : '#94a3b8'
+                                }}
+                            >
+                                ⭐ Ranked
+                            </button>
+                        </div>
+
+                        {viewMode === 'ranked' && (
+                            <>
+                                <select
+                                    value={tierFilter}
+                                    onChange={(e) => setTierFilter(e.target.value)}
+                                    style={{
+                                        padding: '8px 12px',
+                                        background: 'rgba(30, 41, 59, 0.5)',
+                                        border: '1px solid rgba(148, 163, 184, 0.2)',
+                                        borderRadius: '8px',
+                                        color: '#e2e8f0',
+                                        fontSize: '14px',
+                                        cursor: 'pointer'
+                                    }}
+                                >
+                                    <option value="">All Tiers</option>
+                                    <option value="S">🏆 S Tier</option>
+                                    <option value="A">🥇 A Tier</option>
+                                    <option value="B">🥈 B Tier</option>
+                                    <option value="C">🥉 C Tier</option>
+                                    <option value="D">📌 D Tier</option>
+                                </select>
+                            </>
+                        )}
+
+                        <button
+                            onClick={handleScoreAll}
+                            disabled={isScoring}
+                            style={{
+                                padding: '8px 16px',
+                                background: isScoring
+                                    ? 'rgba(100, 116, 139, 0.3)'
+                                    : 'linear-gradient(135deg, #22c55e, #16a34a)',
+                                border: 'none',
+                                borderRadius: '8px',
+                                color: '#fff',
+                                fontWeight: '500',
+                                fontSize: '14px',
+                                cursor: isScoring ? 'not-allowed' : 'pointer',
+                                marginLeft: 'auto'
+                            }}
+                        >
+                            {isScoring ? '⏳ Scoring...' : '🎯 Score All Papers'}
+                        </button>
+                    </div>
 
                     {stats && <StatsPanel stats={stats} />}
 
@@ -144,7 +265,9 @@ function App() {
                             <p className="empty-description">
                                 {searchQuery
                                     ? `No results for "${searchQuery}". Try a different search term.`
-                                    : 'Click "Fetch Papers" to get the latest research papers.'}
+                                    : viewMode === 'ranked'
+                                        ? 'No scored papers yet. Click "Score All Papers" to score them.'
+                                        : 'Click "Fetch Papers" to get the latest research papers.'}
                             </p>
                         </div>
                     ) : (
@@ -172,3 +295,4 @@ function App() {
 }
 
 export default App;
+
