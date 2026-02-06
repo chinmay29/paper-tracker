@@ -71,15 +71,23 @@ export async function getStats() {
 /**
  * Trigger fetching new papers from arXiv
  */
-export async function fetchNewPapers({ days = 7, maxResults = 100, enrich = false } = {}) {
+export async function fetchNewPapers({ days = 7, maxResults = 100, enrich = false, keywords = null } = {}) {
     return fetchApi('/fetch', {
         method: 'POST',
         body: JSON.stringify({
             days,
             max_results: maxResults,
             enrich,
+            keywords,
         }),
     });
+}
+
+/**
+ * Get available fetch keywords
+ */
+export async function getFetchKeywords() {
+    return fetchApi('/fetch-keywords');
 }
 
 /**

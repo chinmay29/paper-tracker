@@ -184,6 +184,7 @@ class ArxivClient:
         self,
         days_back: int = 7,
         max_results: int = 200,
+        keywords: Optional[list[str]] = None,
     ) -> list[Paper]:
         """
         Fetch recent papers related to LLM inference.
@@ -191,23 +192,27 @@ class ArxivClient:
         Args:
             days_back: Number of days to look back
             max_results: Maximum number of results
+            keywords: Custom keywords to search for (uses defaults if None)
             
         Returns:
             List of Paper objects filtered by date
         """
-        # Use a subset of high-signal keywords
-        keywords = [
-            "inference optimization",
-            "LLM serving",
-            "quantization",
-            "speculative decoding",
-            "KV cache",
-            "transformer optimization",
-            "large language model",
-        ]
+        # Use custom keywords or default high-signal keywords
+        if keywords:
+            search_keywords = keywords
+        else:
+            search_keywords = [
+                "inference optimization",
+                "LLM serving",
+                "quantization",
+                "speculative decoding",
+                "KV cache",
+                "transformer optimization",
+                "large language model",
+            ]
         
         papers = self.search(
-            keywords=keywords,
+            keywords=search_keywords,
             categories=LLM_CATEGORIES,
             max_results=max_results,
         )

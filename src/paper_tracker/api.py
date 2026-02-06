@@ -119,6 +119,7 @@ class FetchRequest(BaseModel):
     days: int = 7
     max_results: int = 100
     enrich: bool = False
+    keywords: Optional[list[str]] = None  # Custom keywords to search for
 
 
 class FetchResponse(BaseModel):
@@ -244,12 +245,16 @@ async def get_stats():
     )
 
 
-def _fetch_papers_task(days: int, max_results: int, enrich: bool):
+def _fetch_papers_task(days: int, max_results: int, enrich: bool, keywords: Optional[list[str]] = None):
     """Background task to fetch papers from arXiv."""
     global db, embeddings_store
     
     client = ArxivClient()
-    papers = client.fetch_llm_inference_papers(days_back=days, max_results=max_results)
+    papers = client.fetch_llm_inference_papers(
+        days_back=days,
+        max_results=max_results,
+        keywords=keywords,
+    )
     
     if enrich:
         s2_client = SemanticScholarClient()
@@ -270,14 +275,25 @@ async def fetch_papers(request: FetchRequest, background_tasks: BackgroundTasks)
     Trigger fetching new papers from arXiv.
     
     This runs in the background and returns immediately.
+    
+    Optionally provide specific keywords to search for. If not provided,
+    uses default LLM inference keywords.
     """
-    background_tasks.add_task(_fetch_papers_task, request.days, request.max_results, request.enrich)
+    background_tasks.add_task(
+        _fetch_papers_task,
+        request.days,
+        request.max_results,
+        request.enrich,
+        request.keywords,
+    )
+    
+    keyword_msg = f" with keywords: {request.keywords}" if request.keywords else ""
     
     return FetchResponse(
         fetched=0,
         new_papers=0,
         duplicates=0,
-        message=f"Fetching papers from the last {request.days} days in background...",
+        message=f"Fetching papers from the last {request.days} days{keyword_msg} in background...",
     )
 
 
@@ -289,6 +305,28 @@ async def sync_embeddings():
     
     count = embeddings_store.sync_from_database(db, limit=5000)
     return {"synced": count, "total": embeddings_store.get_count()}
+
+
+@app.get("/api/fetch-keywords")
+async def get_fetch_keywords():
+    """Get available keywords for paper fetching."""
+    from .arxiv_client import LLM_INFERENCE_KEYWORDS
+    
+    # Default keywords used when none specified
+    default_keywords = [
+        "inference optimization",
+        "LLM serving",
+        "quantization",
+        "speculative decoding",
+        "KV cache",
+        "transformer optimization",
+        "large language model",
+    ]
+    
+    return {
+        "default": default_keywords,
+        "all": LLM_INFERENCE_KEYWORDS,
+    }
 
 
 @app.get("/api/health")
@@ -399,6 +437,40 @@ async def score_single_paper(
     )
 
 
+def _score_papers_task(papers: list[Paper], use_pdf: bool = False):
+    """Background task to score papers."""
+    global db
+    
+    logger.info(f"Starting background scoring for {len(papers)} papers (PDF={use_pdf})")
+    
+    for i, paper in enumerate(papers):
+        try:
+            # Check if text is extracted first to avoid re-downloading if possible
+            # But score_paper handles that via caching
+            
+            result = score_paper(paper, use_pdf_text=use_pdf)
+            db.save_paper_score(
+                arxiv_id=paper.arxiv_id,
+                topic_score=result.topic_relevance.score,
+                topic_category=result.topic_relevance.topic_category,
+                production_score=result.production_readiness.score,
+                credibility_score=result.credibility.score,
+                composite_score=result.composite_score,
+                rank_tier=result.rank_tier,
+                benchmark_flags=json.dumps(result.benchmark_flags.flags),
+            )
+            
+            # Small sleep to prevent freezing the server completely if CPU bound
+            if i % 5 == 0:
+                import time
+                time.sleep(0.1)
+                
+        except Exception as e:
+            logger.warning(f"Failed to score paper {paper.arxiv_id}: {e}")
+            
+    logger.info(f"Finished background scoring {len(papers)} papers")
+
+
 @app.post("/api/score-all", response_model=ScoreAllResponse)
 async def score_all_papers(
     limit: int = Query(100, ge=1, le=500),
@@ -412,6 +484,8 @@ async def score_all_papers(
     - Default: scores only unscored papers
     - rescore_all=true: re-scores all papers (useful after algorithm updates)
     - use_pdf=true: downloads and analyzes full PDF text (slower but more accurate)
+    
+    Runs in BACKGROUND. Returns immediately with the number of papers queued.
     """
     # Get papers to score
     if rescore_all:
@@ -427,28 +501,13 @@ async def score_all_papers(
             tier_distribution=stats.get("tier_distribution", {}),
         )
     
-    # Score papers
-    scored_count = 0
-    for paper in papers:
-        try:
-            result = score_paper(paper, use_pdf_text=use_pdf)
-            db.save_paper_score(
-                arxiv_id=paper.arxiv_id,
-                topic_score=result.topic_relevance.score,
-                topic_category=result.topic_relevance.topic_category,
-                production_score=result.production_readiness.score,
-                credibility_score=result.credibility.score,
-                composite_score=result.composite_score,
-                rank_tier=result.rank_tier,
-                benchmark_flags=json.dumps(result.benchmark_flags.flags),
-            )
-            scored_count += 1
-        except Exception as e:
-            logger.warning(f"Failed to score paper {paper.arxiv_id}: {e}")
+    # Add to background tasks
+    if background_tasks:
+        background_tasks.add_task(_score_papers_task, papers, use_pdf)
     
     stats = db.get_stats()
     return ScoreAllResponse(
-        scored=scored_count,
+        scored=len(papers),  # Return number of papers queued
         total=stats["scored_papers"],
         tier_distribution=stats.get("tier_distribution", {}),
     )

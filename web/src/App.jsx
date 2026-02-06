@@ -6,6 +6,8 @@ import StatsPanel from './components/StatsPanel';
 import PaperCard from './components/PaperCard';
 import PaperDetail from './components/PaperDetail';
 import LoadingSpinner from './components/LoadingSpinner';
+import FetchModal from './components/FetchModal';
+import { useToast } from './components/Toast';
 
 function App() {
     const [papers, setPapers] = useState([]);
@@ -23,6 +25,10 @@ function App() {
     const [tierFilter, setTierFilter] = useState('');
     const [topicFilter, setTopicFilter] = useState('');
     const [isScoring, setIsScoring] = useState(false);
+    const [showFetchModal, setShowFetchModal] = useState(false);
+
+    // Toast for progress notifications
+    const { showToast, updateProgress, hideToast, ToastComponent } = useToast();
 
     // Load initial data
     const loadPapers = useCallback(async () => {
@@ -94,43 +100,105 @@ function App() {
         return () => clearTimeout(timer);
     }, [searchQuery, searchMode, handleSearch, viewMode]);
 
-    // Fetch new papers handler
-    const handleFetchPapers = async () => {
-        try {
-            setFetchingPapers(true);
-            await fetchNewPapers({ days: 7, maxResults: 100, enrich: true });
-            // Reload data after a short delay
-            setTimeout(async () => {
-                await loadPapers();
-                setFetchingPapers(false);
-            }, 2000);
-        } catch (err) {
-            console.error('Failed to fetch papers:', err);
-            setError(err.message);
+    // Poll for stats updates
+    const startPolling = useCallback(async (initialStats, targetCount, type = 'scoring') => {
+        const startTime = Date.now();
+        const pollInterval = setInterval(async () => {
+            try {
+                const newStats = await getStats();
+                setStats(newStats);
+
+                let progress = 0;
+                let done = false;
+
+                if (type === 'scoring') {
+                    const scored = newStats.scored_papers - initialStats.scored_papers;
+                    progress = Math.min(100, (scored / targetCount) * 100);
+                    updateProgress(progress, `Scoring papers: ${scored} / ${targetCount}`);
+
+                    if (scored >= targetCount) done = true;
+                } else if (type === 'fetching') {
+                    const fetched = newStats.total_papers - initialStats.total_papers;
+                    // Indeterminate progress for fetching since we don't look total
+                    updateProgress(null, `Fetched ${fetched} new papers...`);
+
+                    // Stop after 30s or if papers stop increasing for 5s (simplified: just 30s timeout or manual reload)
+                    // For now, let's just run for 5s then reload papers to see if any
+                    // Actually, let's just trigger a reload every few seconds
+                    if (fetched > 0) loadPapers();
+                }
+
+                if (done || Date.now() - startTime > 300000) { // 5 min timeout
+                    clearInterval(pollInterval);
+                    if (done) {
+                        showToast('Task completed successfully!', 'success', null, 3000);
+                        setTimeout(loadPapers, 1000);
+                        setIsScoring(false);
+                        setFetchingPapers(false);
+                    } else {
+                        showToast('Task taking longer than expected. check back later.', 'warning', null, 5000);
+                        setIsScoring(false);
+                        setFetchingPapers(false);
+                    }
+                }
+            } catch (err) {
+                console.error('Polling error:', err);
+            }
+        }, 2000);
+
+        return pollInterval;
+    }, [updateProgress, loadPapers, showToast]);
+
+    // Handle fetch modal completion
+    const handleFetchStart = async () => {
+        setFetchingPapers(true);
+        const currentStats = await getStats();
+        showToast('Fetching papers from arXiv...', 'info');
+
+        // Simple polling for a while to update stats
+        // fetching is fast, usually 10-20s.
+        startPolling(currentStats, 100, 'fetching');
+
+        // Timeout to stop "fetching" state visually after 20s if not done
+        setTimeout(() => {
             setFetchingPapers(false);
-        }
+            loadPapers();
+            hideToast();
+        }, 20000);
     };
 
     // Score all papers handler
     const handleScoreAll = async (usePdf = false, rescoreAll = false) => {
         try {
             setIsScoring(true);
+            const currentStats = await getStats();
+
+            showToast('Starting scoring...', 'info', 0);
+
             const result = await scoreAllPapers({ limit: 200, usePdf, rescoreAll });
-            await loadPapers();
-            setError(null);
-            console.log('Scored papers:', result);
+            const queuedCount = result.scored;
+
+            if (queuedCount === 0) {
+                showToast('No papers to score!', 'success', null, 3000);
+                setIsScoring(false);
+                return;
+            }
+
+            console.log(`Queued ${queuedCount} papers for scoring`);
+            startPolling(currentStats, queuedCount, 'scoring');
+
         } catch (err) {
             console.error('Failed to score papers:', err);
             setError(err.message);
-        } finally {
             setIsScoring(false);
+            showToast(`Error: ${err.message}`, 'error', null, 5000);
         }
     };
 
     return (
         <>
             <Header
-                onFetchPapers={handleFetchPapers}
+                onFetchPapers={() => setShowFetchModal(true)}
                 fetchingPapers={fetchingPapers}
             />
 
@@ -334,9 +402,16 @@ function App() {
                     onClose={() => setSelectedPaper(null)}
                 />
             )}
+
+            <FetchModal
+                isOpen={showFetchModal}
+                onClose={() => setShowFetchModal(false)}
+                onFetchComplete={handleFetchStart}
+            />
+
+            {ToastComponent}
         </>
     );
 }
 
 export default App;
-
