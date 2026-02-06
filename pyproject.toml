@@ -1,0 +1,35 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "paper-tracker"
+version = "0.1.0"
+description = "Research paper tracking system for LLM inference papers"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "feedparser>=6.0.0",
+    "requests>=2.31.0",
+    "click>=8.0.0",
+    "rich>=13.0.0",
+    "fastapi>=0.109.0",
+    "uvicorn[standard]>=0.27.0",
+    "pydantic>=2.5.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+]
+
+[project.scripts]
+paper-tracker = "paper_tracker.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/paper_tracker"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
